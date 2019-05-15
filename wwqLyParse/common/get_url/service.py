@@ -4,7 +4,7 @@
 from .base import *
 from ..async_pool import AsyncPool
 from .. import asyncio
-from ..for_path import get_real_path
+from ..for_path import get_real_path, PY35
 from ..lru_cache import LRUCache
 from ..key_lock import AsyncKeyLockDict, ASYNC_FUCK_KEY_LOCK
 from ..utils import get_caller_info
@@ -14,6 +14,7 @@ import json
 import logging
 import threading
 import functools
+import selectors
 
 
 class GetUrlService(object):
@@ -42,15 +43,19 @@ class GetUrlService(object):
                 self.http_proxy = config.get("get_url", "http_proxy", fallback=None)
                 self.ssl_verify = config.getboolean("get_url", "ssl_verify", fallback=True)
                 self.url_key_lock = AsyncKeyLockDict()
+                force_use_selector = selectors.DefaultSelector is not selectors.SelectSelector
+                if self.http_proxy:
+                    force_use_selector = True
                 self.loop = asyncio.new_running_async_loop("GetUrlLoop",
-                                                           force_use_selector=bool(self.http_proxy))
+                                                           force_use_selector=force_use_selector)
                 self.pool_get_url = AsyncPool(GET_URL_PARALLEL_LIMIT, thread_name_prefix="GetUrlPool", loop=self.loop)
                 if self.impl is None:
                     try:
-                        if asyncio.PY37:
+                        if not PY35:
                             from .aiohttp import AioHttpGetUrlImpl
                         else:
                             from .aiohttp352 import AioHttpGetUrlImpl
+                            self.ssl_verify = False
                         self.impl = AioHttpGetUrlImpl(self)
                     except:
                         pass
